@@ -2,6 +2,8 @@
 
 ## 1. System Design
 
+As of before step two, there was no real useage of AI outside of assisting in guiding my `core_actions.md` file, and ensuring that the text was simple, accurate, and actually captured the meaning of what I wanted to make. A simple back and forth to reduce ambiguity.
+
 **a. Initial design**
 
 - Briefly describe your initial UML design.

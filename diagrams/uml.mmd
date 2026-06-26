@@ -1,15 +1,61 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
-
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Owner {
+        +List~TimeWindow~ availability
+        +List~str~ preferences
+        +List~Pet~ pets
+        +get_availability() List~TimeWindow~
+        +get_preferences() List~str~
+        +set_preferences(prefs: List~str~) None
+        +get_pets() List~Pet~
+        +add_pet(pet: Pet) None
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class TimeWindow {
+        +datetime start
+        +datetime end
+        +bool recurring
+        +get_start() datetime
+        +get_end() datetime
+        +is_recurring() bool
     }
 
-    ClassName --> AnotherClass : relationship
+    class Pet {
+        +str name
+        +date dob
+        +date date_added
+        -PriorityQueue~Task~ task_queue
+        +add_task(task: Task) None
+        +remove_task(task: Task) None
+        +get_tasks() PriorityQueue~Task~
+        +get_top_task() Task
+        +get_name() str
+        +get_dob() date
+        +get_date_added() date
+    }
+
+    class Task {
+        +str body
+        +int priority
+        +int duration_minutes
+        +get_body() str
+        +set_body(body: str) None
+        +get_priority() int
+        +set_priority(priority: int) None
+        +get_duration() int
+        +set_duration(minutes: int) None
+    }
+
+    class Scheduler {
+        +Owner owner
+        +Optional~LLMClient~ llm
+        +generate_plan() str
+        +explain_plan(plan: str) str
+        -_apply_constraints(windows: List~TimeWindow~, preferences: List~str~) None
+        -_rule_based_explanation(plan: str) str
+    }
+
+    Owner "1" --> "1..*" TimeWindow : has
+    Owner "1" --> "1..*" Pet : owns
+    Pet "1" --> "0..*" Task : queues
+    Scheduler --> Owner : uses
+    Scheduler --> Task : schedules
