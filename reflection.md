@@ -7,12 +7,34 @@ As of before step two, there was no real useage of AI outside of assisting in gu
 **a. Initial design**
 
 - Briefly describe your initial UML design.
+  - Initial UML design was okay. I chose classes by the responsibilities they should have.
+
+Where owner should be in charge of pet, and each pet should have tasks.
+
+Each task should be owned by a pet, since each pet may have a different set of tasks.
+
+The scheduler should take the Owner, and tasks and see what the Owner is available to do, and generate a plan accordingly.
+
 - What classes did you include, and what responsibilities did you assign to each?
+
+I chose four classes: Owner, Pet, Scheduler, Task, but added one for a time slot for the owner.
+
+Owner, has pets, Owner has timeslots.
+pet has tasks, but is scheduled by the Scheduler
+Tasks track priority, text description and duration.
+Timeslots describe owner availablity. 
+
+Scheduler uses a basic algorithm to measure availablity for tasks, and then sends possible planning/ description to an LLM to explain the reasoning. (Open-AI Api compatible.) If not, it has basic text to have "some" description for the choices made.
+
 
 **b. Design changes**
 
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
+
+Yes I wanted to better have my design focus on the animal, it needed the species too. It was lacking what I would argue is critical information.
+
+I also forced the removal of hardcoded values that would make life harder for everyone involved.
 
 ---
 
@@ -21,12 +43,24 @@ As of before step two, there was no real useage of AI outside of assisting in gu
 **a. Constraints and priorities**
 
 - What constraints does your scheduler consider (for example: time, priority, preferences)?
+
+My scheduler considers prioirity within the availability windows.
+
+Preferences are ultimately lastly considered, as the animal is more important than personal preferences
+
 - How did you decide which constraints mattered most?
+
+I considered animal welfare over owner preferences. Animal welfare matters most, and personal preferences are secondary to all of the above.
 
 **b. Tradeoffs**
 
 - Describe one tradeoff your scheduler makes.
+
+Its greedy, and never backtracks. Its also simplistic.
+
 - Why is that tradeoff reasonable for this scenario?
+
+Simplicity > complexity. As tasks get more difficult, and different needs to be met, then I should change it.
 
 ---
 

@@ -83,4 +83,4 @@ Scheduler **may optionally** use an LLM that is Open-AI api Compatible to interf
 
 # Restrictions.
 
-This application intends on only being a backend, as it will connect to the Streamlit UI.
+This application intends on only being a backend, as it will connect to the Streamlit UI later.
