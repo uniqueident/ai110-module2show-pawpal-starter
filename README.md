@@ -63,19 +63,31 @@ Tasks were scheduled into the owner's available time windows in chronological or
 
 ## 🧪 Testing PawPal+
 
+Make sure you're in your virtual environment (see [Setup](#setup)) before running tests.
+
 ```bash
 # Run the full test suite:
-pytest
+python3 -m pytest
 
 # Run with coverage:
 pytest --cov
 ```
 
+The suite in `tests/test_pawpal.py` covers the core domain model: task completion and priority-queue ordering on `Pet`, `TimeWindow` overlap/recurrence projection, owner conflict detection, and `Scheduler.generate_plan()` behavior — filtering, preference-based sorting, recurring windows, and edge cases like tasks too large for any window.
+
 Sample test output:
 
 ```
-# Paste your pytest output here
+================================================================================================ test session starts =================================================================================================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/uniqueident/pawpal/ai110-module2show-pawpal-starter
+plugins: anyio-4.14.1
+collected 25 items                                                                                                                                                                                                   
+
+tests/test_pawpal.py .........................  
 ```
+
+I am 4/5 confident with the current system's a month.
 
 ## 📐 Smarter Scheduling
 

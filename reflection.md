@@ -73,12 +73,24 @@ With that being said as well, there is a slight nit about readability in the cur
 **a. How you used AI**
 
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
+  
+Given that the AI focus is really hard here, I used it for brainstorming and idea outreach/verification. Then I also used it as a second set of eyes to quickly refactor and be able to debug parts of code.
+
+However, I still needed to be able to judge where the AI was stating those things, and verifying that indeed that is what I wanted, as well as that it did what it stated.
+
 - What kinds of prompts or questions were most helpful?
+
+I found that having a accountt level system prompt for the AI to respond in a professional, helpful manner, where there is no praise, but a listing of what occured, enables me to get a better idea of what is going on without it trying to praise me.
 
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
+
+The AI wanted to install all sorts of packages to make life easier. But I also am not going to install random packages.
+Next, I also forced it to document the test as well as provide reasoning to me. Sometimes the logic was inconsistent and iffy at best. As such I did not accept some of the suggested terminal runs, file changes, and documentations.
+
 - How did you evaluate or verify what the AI suggested?
+I evaluates what the AI suggested by doing two things. One starting a fresh session and telling it to evaluate the file. Two by looking over the file myself. I found that I can more often at least, find issues with the code that the AI seemed to gloss over. As such, I had it recheck the file, list changes, then I checked the diff to ensure that all was as said, and all was as needed to be changed.
 
 ---
 
