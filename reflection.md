@@ -62,6 +62,10 @@ Its greedy, and never backtracks. Its also simplistic.
 
 Simplicity > complexity. As tasks get more difficult, and different needs to be met, then I should change it.
 
+Currently, it checks tasks, then open windows, and greedily fills it up. Works in this case, due again to its simplicity.
+
+With that being said as well, there is a slight nit about readability in the current system with the printing, but its fine to keep as is.
+
 ---
 
 ## 3. AI Collaboration

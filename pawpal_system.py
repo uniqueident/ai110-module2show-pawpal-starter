@@ -10,6 +10,7 @@ meant to be driven by a separate Streamlit front end.
 from __future__ import annotations
 
 import heapq
+import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Optional, Protocol
@@ -18,6 +19,18 @@ from typing import Optional, Protocol
 ## @{
 MIN_TASK_PRIORITY = 0  ##< Lowest allowed priority value (0 = most urgent).
 MIN_TASK_DURATION_MINUTES = 1  ##< Smallest allowed task duration, in minutes.
+## @}
+
+## @name Task recurrence
+## Maps a Task's recurrence label to the timedelta added to today's date to
+## compute the next occurrence's due date, used by Task.create_next_occurrence().
+## @{
+TASK_RECURRENCE_DAILY = "daily"  ##< Recurs every day.
+TASK_RECURRENCE_WEEKLY = "weekly"  ##< Recurs every week.
+TASK_RECURRENCE_INTERVALS = {
+    TASK_RECURRENCE_DAILY: timedelta(days=1),
+    TASK_RECURRENCE_WEEKLY: timedelta(days=7),
+}
 ## @}
 
 ## @name Schedule line formatting
@@ -101,6 +114,61 @@ class TimeWindow:
         """
         return self.recurring
 
+    def occurs_on(self, day: date) -> bool:
+        """!
+        @brief Check whether this window has an occurrence on @p day.
+
+        Recurring windows occur on every calendar day. One-off windows only
+        occur on the single day they were scheduled for.
+
+        @param day The calendar date to check.
+        @return True if this window has an occurrence on @p day.
+        """
+        if self.recurring:
+            return True
+        return self.start.date() == day
+
+    def for_day(self, day: date) -> "TimeWindow":
+        """!
+        @brief Project this window's time-of-day onto a specific calendar day.
+
+        Keeps the window's duration and recurring flag, but replaces the
+        date component of @c start (and, by extension, @c end) with @p day.
+        This is what lets a recurring window (e.g. "every day 7-8am") be
+        turned into a concrete, schedulable block for a given date instead
+        of forever reusing whatever anchor date it was first created with.
+
+        @param day The calendar date to project onto.
+        @return A new TimeWindow occurring on @p day.
+        """
+        duration = self.end - self.start
+        new_start = datetime.combine(day, self.start.time())
+        return TimeWindow(new_start, new_start + duration, self.recurring)
+
+    def overlaps(self, other: "TimeWindow") -> bool:
+        """!
+        @brief Check whether this window's time conflicts with @p other's.
+
+        Two one-off windows conflict if their absolute datetime ranges
+        intersect. If either window is recurring, both are first projected
+        onto the same reference day (the one-off window's day, if there is
+        one) so that, e.g., a recurring "7-8am daily" window is correctly
+        flagged as conflicting with a one-off "7:30-8am" appointment on any
+        day, not just the recurring window's original anchor date.
+
+        @param other The TimeWindow to compare against.
+        @return True if the two windows overlap in time.
+        """
+        if not self.recurring and not other.recurring:
+            return self.start < other.end and other.start < self.end
+
+        reference = (
+            self.start.date() if not self.recurring else other.start.date()
+        )
+        a = self.for_day(reference)
+        b = other.for_day(reference)
+        return a.start < b.end and b.start < a.end
+
 
 @dataclass
 class Task:
@@ -116,6 +184,8 @@ class Task:
     priority: int
     duration_minutes: int
     completed: bool = False
+    recurrence: Optional[str] = None
+    due_date: Optional[date] = None
 
     def get_name(self) -> str:
         """!
@@ -181,11 +251,90 @@ class Task:
             )
         self.duration_minutes = minutes
 
-    def mark_complete(self) -> None:
+    def get_recurrence(self) -> Optional[str]:
+        """!
+        @brief Get this task's recurrence.
+        @return TASK_RECURRENCE_DAILY, TASK_RECURRENCE_WEEKLY, or None if
+                this task is a one-off.
+        """
+        return self.recurrence
+
+    def set_recurrence(self, recurrence: Optional[str]) -> None:
+        """!
+        @brief Set this task's recurrence.
+        @param recurrence TASK_RECURRENCE_DAILY, TASK_RECURRENCE_WEEKLY, or
+               None to make the task a one-off.
+        @throws ValueError if recurrence is not one of the supported values.
+        """
+        if recurrence is not None and recurrence not in TASK_RECURRENCE_INTERVALS:
+            raise ValueError(
+                f"recurrence must be one of {sorted(TASK_RECURRENCE_INTERVALS)} or None"
+            )
+        self.recurrence = recurrence
+
+    def is_recurring(self) -> bool:
+        """!
+        @brief Check whether this task recurs.
+        @return True if this task has a recurrence set.
+        """
+        return self.recurrence is not None
+
+    def get_due_date(self) -> Optional[date]:
+        """!
+        @brief Get this task's due date.
+        @return The due date, or None if it hasn't been set.
+        """
+        return self.due_date
+
+    def set_due_date(self, due_date: Optional[date]) -> None:
+        """!
+        @brief Set this task's due date.
+        @param due_date The new due date, or None to clear it.
+        """
+        self.due_date = due_date
+
+    def create_next_occurrence(self, as_of: Optional[date] = None) -> Optional["Task"]:
+        """!
+        @brief Build the next occurrence of this task, if it recurs.
+
+        The new due date is computed as @p as_of (or today, if not given)
+        plus this task's recurrence interval -- e.g. a daily task completed
+        today is due again today + timedelta(days=1).
+
+        @param as_of Date to measure the recurrence interval from; defaults
+               to today.
+        @return A new, pending Task with the same name/body/priority/
+                duration/recurrence as this one, due on the next occurrence
+                date. None if this task doesn't recur.
+        """
+        if self.recurrence is None:
+            return None
+        reference = as_of or date.today()
+        next_due = reference + TASK_RECURRENCE_INTERVALS[self.recurrence]
+        return Task(
+            name=self.name,
+            body=self.body,
+            priority=self.priority,
+            duration_minutes=self.duration_minutes,
+            completed=False,
+            recurrence=self.recurrence,
+            due_date=next_due,
+        )
+
+    def mark_complete(self) -> Optional["Task"]:
         """!
         @brief Mark this task as completed.
+
+        If this task recurs (daily/weekly), also builds its next occurrence
+        via create_next_occurrence() -- callers that want that occurrence
+        actually scheduled should enqueue it themselves, or use
+        Pet.complete_task() which does so automatically.
+
+        @return The newly created next-occurrence Task, or None if this
+                task doesn't recur.
         """
         self.completed = True
+        return self.create_next_occurrence()
 
     def is_complete(self) -> bool:
         """!
@@ -217,6 +366,9 @@ class Pet:
     # insertion_order breaks ties so equal-priority tasks keep FIFO order.
     _task_queue: list = field(default_factory=list, init=False, repr=False)
     _insertion_counter: int = field(default=0, init=False, repr=False)
+    # Cache of get_tasks()'s sorted output; invalidated on add_task/remove_task
+    # so repeated get_tasks() calls between mutations don't re-sort for nothing.
+    _sorted_cache: Optional[list] = field(default=None, init=False, repr=False)
 
     def add_task(self, task: Task) -> None:
         """!
@@ -227,6 +379,7 @@ class Pet:
             self._task_queue, (task.get_priority(), self._insertion_counter, task)
         )
         self._insertion_counter += 1
+        self._sorted_cache = None
 
     def remove_task(self, task: Task) -> None:
         """!
@@ -237,14 +390,39 @@ class Pet:
             if entry[2] is task:
                 self._task_queue.remove(entry)
                 heapq.heapify(self._task_queue)
+                self._sorted_cache = None
                 return
 
-    def get_tasks(self) -> list[Task]:
+    def complete_task(self, task: Task) -> Optional[Task]:
+        """!
+        @brief Mark one of this pet's queued tasks complete.
+
+        If @p task recurs (daily/weekly), its next occurrence is
+        automatically enqueued on this pet via add_task(), so a recurring
+        task never needs to be manually re-added after it's done.
+
+        @param task The Task to complete (should already be queued here).
+        @return The newly enqueued next-occurrence Task, or None if
+                @p task doesn't recur.
+        """
+        next_task = task.mark_complete()
+        if next_task is not None:
+            self.add_task(next_task)
+        return next_task
+
+    def get_tasks(self, completed: Optional[bool] = None) -> list[Task]:
         """!
         @brief Return a copy of the queued tasks in priority order.
+        @param completed Status filter: None (default) returns every task,
+               True returns only completed tasks, False returns only tasks
+               still pending.
         @return A new list of Task objects, highest priority first.
         """
-        return [entry[2] for entry in sorted(self._task_queue)]
+        if self._sorted_cache is None:
+            self._sorted_cache = [entry[2] for entry in sorted(self._task_queue)]
+        if completed is None:
+            return list(self._sorted_cache)
+        return [task for task in self._sorted_cache if task.is_complete() == completed]
 
     def get_top_task(self) -> Optional[Task]:
         """!
@@ -321,6 +499,24 @@ class Owner:
         """
         self.availability.append(window)
 
+    def get_conflicting_windows(self) -> list[tuple[TimeWindow, TimeWindow]]:
+        """!
+        @brief Find pairs of availability windows that overlap in time.
+
+        Compares every pair of windows with TimeWindow.overlaps(), which
+        correctly accounts for recurring windows by projecting them onto a
+        shared reference day before comparing.
+
+        @return A list of (window, window) pairs that conflict. Each pair
+                is only reported once, in the order the windows were added.
+        """
+        conflicts: list[tuple[TimeWindow, TimeWindow]] = []
+        for i, first in enumerate(self.availability):
+            for second in self.availability[i + 1 :]:
+                if first.overlaps(second):
+                    conflicts.append((first, second))
+        return conflicts
+
     def get_preferences(self) -> list[str]:
         """!
         @brief Get the owner's scheduling preferences.
@@ -349,6 +545,17 @@ class Owner:
         """
         self.pets.append(pet)
 
+    def get_pet(self, name: str) -> Optional[Pet]:
+        """!
+        @brief Look up one of this owner's pets by name.
+        @param name The pet's name to search for (exact match).
+        @return The matching Pet, or None if no pet has that name.
+        """
+        for pet in self.pets:
+            if pet.get_name() == name:
+                return pet
+        return None
+
 
 @dataclass
 class Scheduler:
@@ -369,60 +576,108 @@ class Scheduler:
     owner: Owner
     llm: Optional[LLMClient] = None
 
-    def generate_plan(self) -> str:
+    def generate_plan(
+        self,
+        pet_name: Optional[str] = None,
+        include_completed: bool = False,
+        for_date: Optional[date] = None,
+    ) -> str:
         """!
         @brief Generate a daily care plan for the owner's pets.
 
         Time windows are chronologically ordered and filtered/re-ordered by
         _apply_constraints() using the owner's preferences. Each pet's tasks
-        are then greedily assigned to the remaining windows in priority
-        order (highest priority, i.e. lowest priority number, first),
-        subtracting each task's duration from the window as it is used.
+        are then greedily assigned to the first window with enough remaining
+        time, in priority order (highest priority, i.e. lowest priority
+        number, first), subtracting each task's duration from the window as
+        it is used. Windows too small for one task are kept in play for a
+        later, shorter task rather than being discarded.
 
+        Only windows that actually occur on @p for_date are considered:
+        recurring windows are projected onto that date via
+        TimeWindow.for_day(), and one-off windows are used only if their
+        stored date matches. Scheduling works on private copies of the
+        owner's TimeWindow objects, so repeated calls never shrink the
+        owner's real availability.
+
+        Tasks are assigned to windows pet-by-pet, so a later pet's task can
+        legitimately land in an earlier time slot than an earlier pet's task
+        (e.g. by reusing a small window's leftover time, see the loop
+        above). The scheduled lines are therefore sorted by their assigned
+        start time via @c sorted(..., key=lambda entry: entry[0]) before
+        being joined, so the printed plan always reads in chronological
+        order regardless of the order tasks were assigned in.
+
+        @param pet_name If given, only that pet's tasks are scheduled
+               (unknown names produce an empty plan). If None, every pet's
+               tasks are scheduled.
+        @param include_completed If True, already-completed tasks are
+               scheduled too; by default they're skipped.
+        @param for_date The calendar date to build the plan for; defaults to
+               today. Determines which windows (especially recurring ones)
+               are in play.
         @return A human-readable plan string, one line per scheduled task,
                 or a placeholder message if nothing could be scheduled.
         """
-        windows = self.owner.get_availability()
+        self._warn_conflicts()
+
+        target_date = for_date or date.today()
+        windows = [
+            w.for_day(target_date) if w.is_recurring() else TimeWindow(
+                w.get_start(), w.get_end(), w.is_recurring()
+            )
+            for w in self.owner.get_availability()
+            if w.occurs_on(target_date)
+        ]
         self._apply_constraints(windows, self.owner.get_preferences())
 
-        lines: list[str] = []
-        window_iter = iter(windows)
-        current = next(window_iter, None)
+        if pet_name is not None:
+            pet = self.owner.get_pet(pet_name)
+            pets = [pet] if pet is not None else []
+        else:
+            pets = self.owner.get_pets()
 
-        for pet in self.owner.get_pets():
-            for task in pet.get_tasks():
+        # Each entry is (scheduled_start_time, formatted_line); sorted below
+        # so the plan reads chronologically regardless of assignment order.
+        entries: list[tuple[datetime, str]] = []
+
+        for pet in pets:
+            status_filter = None if include_completed else False
+            for task in pet.get_tasks(completed=status_filter):
                 remaining = task.get_duration()
-                while current is not None:
+                for window in windows:
                     available_minutes = (
-                        current.get_end() - current.get_start()
+                        window.get_end() - window.get_start()
                     ).total_seconds() / 60
                     if available_minutes >= remaining:
-                        lines.append(
-                            SCHEDULE_FIELD_SEPARATOR.join(
-                                [
-                                    f"{FIELD_LABEL_TIME}: "
-                                    f"{current.get_start().strftime(SCHEDULE_TIME_FORMAT)}",
-                                    f"{FIELD_LABEL_NAME}: {pet.get_name()}",
-                                    f"{FIELD_LABEL_SPECIES}: {pet.get_species()}",
-                                    f"{FIELD_LABEL_AGE}: {pet.get_age_years()}",
-                                    f"{FIELD_LABEL_TASK}: {task.get_name()}",
-                                    f"{FIELD_LABEL_PRIORITY}: {task.get_priority()}",
-                                    f"{FIELD_LABEL_DURATION}: {remaining} "
-                                    f"{DURATION_UNIT_LABEL}",
-                                ]
+                        start_time = window.get_start()
+                        entries.append(
+                            (
+                                start_time,
+                                SCHEDULE_FIELD_SEPARATOR.join(
+                                    [
+                                        f"{FIELD_LABEL_TIME}: "
+                                        f"{start_time.strftime(SCHEDULE_TIME_FORMAT)}",
+                                        f"{FIELD_LABEL_NAME}: {pet.get_name()}",
+                                        f"{FIELD_LABEL_SPECIES}: {pet.get_species()}",
+                                        f"{FIELD_LABEL_AGE}: {pet.get_age_years()}",
+                                        f"{FIELD_LABEL_TASK}: {task.get_name()}",
+                                        f"{FIELD_LABEL_PRIORITY}: {task.get_priority()}",
+                                        f"{FIELD_LABEL_DURATION}: {remaining} "
+                                        f"{DURATION_UNIT_LABEL}",
+                                    ]
+                                ),
                             )
                         )
-                        current.start = current.get_start() + timedelta(
+                        window.start = window.get_start() + timedelta(
                             minutes=remaining
                         )
                         break
-                    current = next(window_iter, None)
-                if current is None:
-                    break
 
-        if not lines:
+        if not entries:
             return NO_SCHEDULE_MESSAGE
-        return "\n".join(lines)
+        entries = sorted(entries, key=lambda entry: entry[0])
+        return "\n".join(line for _, line in entries)
 
     def explain_plan(self, plan: str) -> str:
         """!
@@ -447,6 +702,22 @@ class Scheduler:
             except Exception:
                 pass
         return self._rule_based_explanation(plan)
+
+    def _warn_conflicts(self) -> None:
+        """!
+        @brief Print a warning for each pair of overlapping availability
+               windows on the owner, via Owner.get_conflicting_windows().
+
+        This only surfaces the conflicts; it doesn't resolve them or affect
+        scheduling -- both windows in a conflicting pair remain usable.
+        """
+        for first, second in self.owner.get_conflicting_windows():
+            print(
+                f"Warning: overlapping availability windows "
+                f"({first.get_start()} - {first.get_end()}) and "
+                f"({second.get_start()} - {second.get_end()})",
+                file=sys.stderr,
+            )
 
     def _apply_constraints(
         self, windows: list[TimeWindow], preferences: list[str]

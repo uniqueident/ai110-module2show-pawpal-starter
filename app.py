@@ -1,4 +1,12 @@
+from datetime import date, datetime, time
+
 import streamlit as st
+
+from pawpal_system import Owner, Pet, Scheduler, Task, TimeWindow
+
+## Maps the UI's friendly priority labels to Task's numeric priority scale
+## (0 = most urgent).
+PRIORITY_BY_LABEL = {"high": 0, "medium": 1, "low": 2}
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
@@ -43,11 +51,30 @@ owner_name = st.text_input("Owner name", value="Jordan")
 pet_name = st.text_input("Pet name", value="Mochi")
 species = st.selectbox("Species", ["dog", "cat", "other"])
 
-st.markdown("### Tasks")
-st.caption("Add a few tasks. In your final version, these should feed into your scheduler.")
+if "owner" not in st.session_state:
+    st.session_state.owner = Owner()
+owner: Owner = st.session_state.owner
 
-if "tasks" not in st.session_state:
-    st.session_state.tasks = []
+
+def get_or_create_pet(name: str, species: str) -> Pet:
+    """!
+    @brief Find the owner's existing pet by name, or add a new one.
+    @param name The pet's name, as entered in the UI.
+    @param species The pet's species, as entered in the UI.
+    @return The matching or newly created Pet.
+    """
+    for pet in owner.get_pets():
+        if pet.get_name() == name:
+            return pet
+    pet = Pet(name, species, date.today(), date.today())
+    owner.add_pet(pet)
+    return pet
+
+
+pet = get_or_create_pet(pet_name, species)
+
+st.markdown("### Tasks")
+st.caption("Add a few tasks. They go straight into this pet's task queue.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -55,34 +82,72 @@ with col1:
 with col2:
     duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20)
 with col3:
-    priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
+    priority_label = st.selectbox("Priority", ["low", "medium", "high"], index=2)
 
 if st.button("Add task"):
-    st.session_state.tasks.append(
-        {"title": task_title, "duration_minutes": int(duration), "priority": priority}
+    pet.add_task(
+        Task(task_title, task_title, PRIORITY_BY_LABEL[priority_label], int(duration))
     )
 
-if st.session_state.tasks:
+tasks = pet.get_tasks()
+if tasks:
     st.write("Current tasks:")
-    st.table(st.session_state.tasks)
+    st.table(
+        [
+            {
+                "name": t.get_name(),
+                "priority": t.get_priority(),
+                "duration_minutes": t.get_duration(),
+            }
+            for t in tasks
+        ]
+    )
 else:
     st.info("No tasks yet. Add one above.")
 
 st.divider()
 
+st.subheader("Availability")
+st.caption("Add a time window the owner is free today.")
+
+col_a, col_b = st.columns(2)
+with col_a:
+    start_time = st.time_input("Start", value=time(7, 0))
+with col_b:
+    end_time = st.time_input("End", value=time(8, 0))
+
+if st.button("Add availability window"):
+    today = date.today()
+    owner.add_availability(
+        TimeWindow(datetime.combine(today, start_time), datetime.combine(today, end_time))
+    )
+
+windows = owner.get_availability()
+if windows:
+    st.write("Current availability:")
+    st.table(
+        [
+            {
+                "start": w.get_start().strftime("%H:%M"),
+                "end": w.get_end().strftime("%H:%M"),
+            }
+            for w in windows
+        ]
+    )
+else:
+    st.info("No availability windows yet. Add one above.")
+
+st.divider()
+
 st.subheader("Build Schedule")
-st.caption("This button should call your scheduling logic once you implement it.")
+st.caption("Generates a plan from the owner's availability and each pet's tasks.")
 
 if st.button("Generate schedule"):
-    st.warning(
-        "Not implemented yet. Next step: create your scheduling logic (classes/functions) and call it here."
-    )
-    st.markdown(
-        """
-Suggested approach:
-1. Design your UML (draft).
-2. Create class stubs (no logic).
-3. Implement scheduling behavior.
-4. Connect your scheduler here and display results.
-"""
-    )
+    scheduler = Scheduler(owner)
+    plan = scheduler.generate_plan()
+    explanation = scheduler.explain_plan(plan)
+
+    st.write("Today's Schedule:")
+    st.code(plan)
+    st.write("Why this plan:")
+    st.write(explanation)

@@ -58,7 +58,7 @@ Today's Schedule
 ----------------------------------------
 Why this plan:
 Tasks were scheduled into the owner's available time windows in chronological order, assigning each pet's highest-priority task (lowest priority number) first and moving to the next task once a window's time was used up. Preferences considered: morning walks preferred.
-========================================
+========================================1
 ```
 
 ## 🧪 Testing PawPal+
@@ -79,14 +79,29 @@ Sample test output:
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
+### Sorting behavior
 
-| Feature | Method(s) | Notes |
-|---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+*Methods: `Pet.get_tasks()`, `Scheduler._apply_constraints()`, `Scheduler.generate_plan()`*
+
+Tasks are scheduled highest-priority first (lowest priority number wins), with ties broken by the order they were added. Time windows are considered chronologically, with any preferred times of day (morning/afternoon/evening/night) bumped to the front. The final plan is always printed in chronological order, regardless of the order tasks were assigned in.
+
+### Filtering behavior
+
+*Methods: `Scheduler.generate_plan()`, `Pet.get_tasks()`, `TimeWindow.occurs_on()`, `TimeWindow.for_day()`*
+
+A plan can be scoped to one pet, and completed tasks are skipped by default. Only time windows that actually occur on the requested date are used — recurring windows are projected onto that date, one-off windows only count on their own date. A task is only placed in a window that's big enough for it; if nothing fits anywhere, the plan says so instead of coming back empty.
+
+### Conflict detection logic
+
+*Methods: `Owner.get_conflicting_windows()`, `TimeWindow.overlaps()`, `Scheduler._warn_conflicts()`*
+
+Before building a plan, the scheduler checks the owner's availability windows for overlaps (accounting for recurring windows) and prints a warning for each pair it finds. This is just a heads-up — conflicting windows aren't removed, and both stay usable for scheduling.
+
+### Recurring task logic
+
+*Methods: `Task.create_next_occurrence()`, `Task.mark_complete()`, `Pet.complete_task()`, `TimeWindow.is_recurring()`, `TimeWindow.occurs_on()`, `TimeWindow.for_day()`*
+
+Tasks can recur daily or weekly. Completing a recurring task automatically creates and re-queues its next occurrence, so it doesn't need to be manually re-added. Recurring availability windows work similarly: instead of being tied to one date, they're treated as present on every day and projected onto whatever date a plan is being built for.
 
 ## 📸 Demo Walkthrough
 
