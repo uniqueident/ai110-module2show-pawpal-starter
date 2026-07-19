@@ -5,10 +5,12 @@ classDiagram
         +List~Pet~ pets
         +get_availability() List~TimeWindow~
         +add_availability(window: TimeWindow) None
+        +get_conflicting_windows() List~Tuple~TimeWindow, TimeWindow~~
         +get_preferences() List~str~
         +set_preferences(prefs: List~str~) None
         +get_pets() List~Pet~
         +add_pet(pet: Pet) None
+        +get_pet(name: str) Optional~Pet~
     }
 
     class TimeWindow {
@@ -18,6 +20,9 @@ classDiagram
         +get_start() datetime
         +get_end() datetime
         +is_recurring() bool
+        +occurs_on(day: date) bool
+        +for_day(day: date) TimeWindow
+        +overlaps(other: TimeWindow) bool
     }
 
     class Pet {
@@ -28,13 +33,14 @@ classDiagram
         -List~Task~ task_queue
         +add_task(task: Task) None
         +remove_task(task: Task) None
-        +get_tasks() List~Task~
-        +get_top_task() Task
+        +complete_task(task: Task) Optional~Task~
+        +get_tasks(completed: Optional~bool~) List~Task~
+        +get_top_task() Optional~Task~
         +get_name() str
         +get_species() str
         +get_dob() date
         +get_date_added() date
-        +get_age_years(as_of: date) int
+        +get_age_years(as_of: Optional~date~) int
     }
 
     class Task {
@@ -43,6 +49,8 @@ classDiagram
         +int priority
         +int duration_minutes
         +bool completed
+        +Optional~str~ recurrence
+        +Optional~date~ due_date
         +get_name() str
         +set_name(name: str) None
         +get_body() str
@@ -51,20 +59,33 @@ classDiagram
         +set_priority(priority: int) None
         +get_duration() int
         +set_duration(minutes: int) None
-        +mark_complete() None
+        +get_recurrence() Optional~str~
+        +set_recurrence(recurrence: Optional~str~) None
+        +is_recurring() bool
+        +get_due_date() Optional~date~
+        +set_due_date(due_date: Optional~date~) None
+        +create_next_occurrence(as_of: Optional~date~) Optional~Task~
+        +mark_complete() Optional~Task~
         +is_complete() bool
     }
 
     class Scheduler {
         +Owner owner
         +Optional~LLMClient~ llm
-        +generate_plan() str
+        +generate_plan(pet_name: Optional~str~, include_completed: bool, for_date: Optional~date~) str
         +explain_plan(plan: str) str
+        -_warn_conflicts() None
         -_apply_constraints(windows: List~TimeWindow~, preferences: List~str~) None
         -_rule_based_explanation(plan: str) str
+    }
+
+    class LLMClient {
+        <<interface>>
+        +complete(prompt: str) str
     }
 
     Owner "1" --> "0..*" TimeWindow : has
     Owner "1" --> "1..*" Pet : owns
     Pet "1" --> "0..*" Task : queues
     Scheduler --> Owner : uses
+    Scheduler --> LLMClient : uses

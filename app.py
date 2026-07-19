@@ -2,7 +2,15 @@ from datetime import date, datetime, time
 
 import streamlit as st
 
-from pawpal_system import Owner, Pet, Scheduler, Task, TimeWindow
+from pawpal_system import (
+    NO_SCHEDULE_MESSAGE,
+    SCHEDULE_FIELD_SEPARATOR,
+    Owner,
+    Pet,
+    Scheduler,
+    Task,
+    TimeWindow,
+)
 
 ## Maps the UI's friendly priority labels to Task's numeric priority scale
 ## (0 = most urgent).
@@ -73,6 +81,23 @@ def get_or_create_pet(name: str, species: str) -> Pet:
 
 pet = get_or_create_pet(pet_name, species)
 
+
+def warn_availability_conflicts(owner: Owner) -> None:
+    """!
+    @brief Show a short st.warning for each pair of overlapping windows.
+
+    Mirrors what Scheduler._warn_conflicts() already checks (via
+    Owner.get_conflicting_windows()) before building a plan, surfaced here
+    so the warning is visible in the UI instead of only on stderr.
+    """
+    for first, second in owner.get_conflicting_windows():
+        st.warning(
+            f"⚠️ Conflict: {first.get_start().strftime('%H:%M')}"
+            f"–{first.get_end().strftime('%H:%M')} overlaps "
+            f"{second.get_start().strftime('%H:%M')}"
+            f"–{second.get_end().strftime('%H:%M')}."
+        )
+
 st.markdown("### Tasks")
 st.caption("Add a few tasks. They go straight into this pet's task queue.")
 
@@ -88,20 +113,32 @@ if st.button("Add task"):
     pet.add_task(
         Task(task_title, task_title, PRIORITY_BY_LABEL[priority_label], int(duration))
     )
+    st.success(f"Added \"{task_title}\" to {pet.get_name()}'s task queue.")
 
-tasks = pet.get_tasks()
+# Pet.get_tasks() returns the pending tasks already sorted by priority
+# (0 = most urgent first), so the rows below reflect scheduling order.
+tasks = pet.get_tasks(completed=False)
 if tasks:
-    st.write("Current tasks:")
-    st.table(
-        [
-            {
-                "name": t.get_name(),
-                "priority": t.get_priority(),
-                "duration_minutes": t.get_duration(),
-            }
-            for t in tasks
-        ]
-    )
+    st.write("Current tasks (sorted by priority):")
+    header = st.columns([3, 2, 2, 2])
+    header[0].markdown("**name**")
+    header[1].markdown("**priority**")
+    header[2].markdown("**duration_minutes**")
+    for task in tasks:
+        row = st.columns([3, 2, 2, 2])
+        row[0].write(task.get_name())
+        row[1].write(task.get_priority())
+        row[2].write(task.get_duration())
+        if row[3].button("Mark complete", key=f"complete_{pet.get_name()}_{id(task)}"):
+            next_task = pet.complete_task(task)
+            if next_task is not None:
+                st.success(
+                    f"Completed \"{task.get_name()}\" and queued its next "
+                    f"{next_task.get_recurrence()} occurrence."
+                )
+            else:
+                st.success(f"Completed \"{task.get_name()}\".")
+            st.rerun()
 else:
     st.info("No tasks yet. Add one above.")
 
@@ -118,9 +155,20 @@ with col_b:
 
 if st.button("Add availability window"):
     today = date.today()
-    owner.add_availability(
-        TimeWindow(datetime.combine(today, start_time), datetime.combine(today, end_time))
+    new_window = TimeWindow(
+        datetime.combine(today, start_time), datetime.combine(today, end_time)
     )
+    conflicting = [w for w in owner.get_availability() if w.overlaps(new_window)]
+    if conflicting:
+        for w in conflicting:
+            st.warning(
+                f"⚠️ Conflict: {start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')} "
+                f"overlaps {w.get_start().strftime('%H:%M')}–{w.get_end().strftime('%H:%M')}. "
+                "Not added."
+            )
+    else:
+        owner.add_availability(new_window)
+        st.success(f"Added availability window {start_time.strftime('%H:%M')}–{end_time.strftime('%H:%M')}.")
 
 windows = owner.get_availability()
 if windows:
@@ -142,12 +190,36 @@ st.divider()
 st.subheader("Build Schedule")
 st.caption("Generates a plan from the owner's availability and each pet's tasks.")
 
+def parse_plan_rows(plan: str) -> list[dict]:
+    """!
+    @brief Turn a Scheduler.generate_plan() string into table-ready rows.
+    @param plan The plan string, one "Time: ... | Name: ..." line per task.
+    @return A list of {field label: value} dicts, one per scheduled line.
+    """
+    rows = []
+    for line in plan.splitlines():
+        fields = line.split(SCHEDULE_FIELD_SEPARATOR)
+        row = {}
+        for field_str in fields:
+            label, _, value = field_str.partition(": ")
+            row[label] = value
+        rows.append(row)
+    return rows
+
+
 if st.button("Generate schedule"):
     scheduler = Scheduler(owner)
+    warn_availability_conflicts(owner)
+
     plan = scheduler.generate_plan()
     explanation = scheduler.explain_plan(plan)
 
     st.write("Today's Schedule:")
-    st.code(plan)
+    if plan == NO_SCHEDULE_MESSAGE:
+        st.warning(plan)
+    else:
+        st.success("Schedule generated successfully.")
+        st.table(parse_plan_rows(plan))
+
     st.write("Why this plan:")
     st.write(explanation)

@@ -87,7 +87,18 @@ collected 25 items
 tests/test_pawpal.py .........................  
 ```
 
-I am 4/5 confident with the current system's a month.
+I am 4/5 confident with the current system's reliability.
+
+## ✅ Features
+
+- **Priority task queue per pet** — each `Pet` keeps its tasks in a min-heap keyed on `(priority, insertion order)`, so `get_top_task()`/`get_tasks()` always return tasks lowest-priority-number-first in O(log n) per insert, with FIFO ordering for ties.
+- **Constraint-aware daily scheduling** — `Scheduler.generate_plan()` greedily assigns each pet's pending tasks to the earliest availability window with enough remaining time, consuming that window's time as it's used and carrying leftover time forward for a later, shorter task.
+- **Preference-based window ordering** — `Scheduler._apply_constraints()` sorts windows chronologically, then bumps windows that start in an owner-preferred part of the day (morning/afternoon/evening/night) to the front.
+- **Date-scoped, recurring availability** — `TimeWindow.for_day()` / `occurs_on()` project recurring windows (e.g. "every day 7–8am") onto any target date, so a plan for a given day only sees windows that actually occur on it.
+- **Recurring tasks** — `Task.create_next_occurrence()` / `Pet.complete_task()` automatically re-enqueue a daily/weekly task's next occurrence the moment the current one is completed.
+- **Availability conflict detection** — `Owner.get_conflicting_windows()` / `TimeWindow.overlaps()` flag pairs of overlapping windows (accounting for recurrence) before a plan is built; conflicts are surfaced as warnings, not silently resolved.
+- **Plan filtering** — plans can be scoped to a single pet, include or exclude already-completed tasks, and gracefully report "nothing fits" instead of returning empty output.
+- **Plan explanation** — `Scheduler.explain_plan()` uses a pluggable, OpenAI-API-compatible `LLMClient` to phrase why the plan looks the way it does, falling back to a deterministic rule-based explanation if no LLM is configured or the call fails.
 
 ## 📐 Smarter Scheduling
 
@@ -117,12 +128,56 @@ Tasks can recur daily or weekly. Completing a recurring task automatically creat
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+### Main UI features
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+The Streamlit app (`app.py`) lets an owner build up a schedule interactively:
+
+- Enter owner/pet basics (owner name, pet name, species) — pets are created on the fly and reused if you enter the same name again.
+- Add tasks with a title, duration (minutes), and a friendly priority label (low/medium/high, mapped to priority 2/1/0). Pending tasks are shown in a table already sorted by priority.
+- Add availability windows with start/end times; a new window that overlaps an existing one is rejected up front with a warning instead of silently double-booking.
+- Generate a schedule on demand, which surfaces any remaining availability conflicts, renders the plan as a table (time, pet, species, age, task, priority, duration), and displays the plan's explanation underneath.
+
+### Example workflow
+
+1. Enter the owner's name and add a pet (e.g. "Rex", a Dog).
+2. Add a few tasks for that pet — a high-priority "Feed", a medium-priority "Walk", a low-priority "Meds" — each with a duration.
+3. Add one or more availability windows (e.g. 07:00–07:20 and 08:00–09:00); if a new window overlaps one already added, the app warns and refuses to add it.
+4. Click **Generate schedule**. The app checks for availability conflicts, then greedily places each pet's highest-priority task into the earliest window with enough room left.
+5. Read the resulting table top-to-bottom for the day's plan, and read "Why this plan" underneath for the reasoning.
+
+### Key scheduler behaviors
+
+- **Priority first, then time**: within a pet, the highest-priority (lowest-numbered) pending task is placed first; ties keep insertion order.
+- **Chronological output**: tasks are assigned pet-by-pet, but the final plan is always sorted by scheduled start time, so it always reads top-to-bottom by clock time regardless of assignment order.
+- **Preferred time of day**: if the owner's preferences mention "morning", "afternoon", "evening", or "night", windows in that part of the day are tried first.
+- **Recurring windows and tasks**: a recurring availability window (e.g. daily 6:00–6:15) is projected onto the plan's target date; a completed recurring task automatically re-queues its next occurrence.
+- **Conflict warnings, not removal**: overlapping availability windows are reported but both remain usable — the scheduler doesn't decide which one "wins".
+- **No LLM required**: `explain_plan()` works out of the box with a deterministic, rule-based explanation; an optional LLM client can be plugged in for a more natural explanation.
+
+### Sample CLI output (`python3 main.py`)
+
+```text
+Warning: overlapping availability windows (2026-07-16 07:00:00 - 2026-07-16 07:20:00) and (2026-07-16 07:10:00 - 2026-07-16 07:30:00)
+Detected 1 overlapping availability window(s):
+  - 2026-07-16 07:00:00 .. 2026-07-16 07:20:00  overlaps  2026-07-16 07:10:00 .. 2026-07-16 07:30:00
+
+========================================
+Today's Schedule (pending tasks only)
+========================================
+Time: 06:00 | Name: Rex | Species: Dog | Age: 6 | Task: Feed | Priority: 0 | Duration: 10 min
+Time: 06:10 | Name: Rex | Species: Dog | Age: 6 | Task: Meds | Priority: 2 | Duration: 5 min
+Time: 07:00 | Name: Luna | Species: Cat | Age: 5 | Task: Feed | Priority: 0 | Duration: 12 min
+Time: 08:00 | Name: Rex | Species: Dog | Age: 6 | Task: Walk | Priority: 1 | Duration: 45 min
+----------------------------------------
+Why this plan:
+Tasks were scheduled into the owner's available time windows in chronological order, assigning each pet's highest-priority task (lowest priority number) first and moving to the next task once a window's time was used up. Preferences considered: morning walks preferred.
+========================================
+
+========================================
+Today's Schedule (Luna only)
+========================================
+Time: 06:00 | Name: Luna | Species: Cat | Age: 5 | Task: Feed | Priority: 0 | Duration: 12 min
+========================================
+```
 
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->

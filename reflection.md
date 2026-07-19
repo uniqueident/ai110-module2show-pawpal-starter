@@ -99,12 +99,33 @@ I evaluates what the AI suggested by doing two things. One starting a fresh sess
 **a. What you tested**
 
 - What behaviors did you test?
+
+
+Task completion status, invalid values for priorities, durations and occurences.
+
+For pets, adding a task grows the queue, and that we filtered by ompletion status. Priority queue ordering, and ensuring that equal priority tasks are FIFO.
+And that we also auto requeue a recurring task.
+
+For time, we checked overlap, and if their occurence.
+
+For the Owner we checked conflicting windows, we also check if the owner has pets or not, and if not, we return None instead of failing.
+
+For the generator:
+Skip completed tasks,filtered by pet name, ensures that we dont mutate owner's vailability, followed time of day preferences. And we have a no schedule message when a task is too long for every available window.
+
 - Why were these tests important?
+
+These tests are important as they are able to prove what we input and what we want is what we output, we can garuntee correctness, not necessarily best method. That requires more testing. And we as people can check best method, and make decisions. Whereas something linear like testing cannot always. Similar to an LLM.
 
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
+
+I am highly confident that the scheduler works correctly. About 85-90% confident. After testing and iteration. Perhaps not optimally. But definitely correctly.
+
 - What edge cases would you test next if you had more time?
+
+I think that high volume cases, where the naiive system for queueing adding, and removing could incur high overhead.
 
 ---
 
@@ -114,10 +135,16 @@ I evaluates what the AI suggested by doing two things. One starting a fresh sess
 
 - What part of this project are you most satisfied with?
 
+I liked the flexibility and choice that I was able to make, but also the ability to work through a gradable project was very nice.
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+The UI needs an overhaul. it works as is, and does what is needed, but I would first, due to performance reasons, choose a different language than python. For UI speed, ideally something that can complile natively for a system. Then can have a frontend support for something stricter typed, like TS or react.
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+Double check everything, sometimes it gets close but not quite, and it requires a lot to think through to ensure that behavior and outcome are correct.
